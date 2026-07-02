@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>都道府県地図クイズ</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 12px 0 32px;
+    }
+
+    #app {
+      width: 100%;
+      max-width: 540px;
+      padding: 0 14px;
+    }
+
+    .screen { display: none; }
+    .screen.active { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+    /* ========== LOADING ========== */
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 80px 0;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #21262d;
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 14px; color: #8b949e; }
+
+    /* ========== TITLE SCREEN ========== */
+    #title-screen { text-align: center; gap: 28px; padding-top: 48px; }
+    .title-logo { font-size: 52px; }
+    .title-main { font-size: 26px; font-weight: 700; color: #58a6ff; letter-spacing: 0.04em; }
+    .title-sub { font-size: 13px; color: #8b949e; margin-top: 6px; }
+
+    .difficulty-label { font-size: 13px; color: #8b949e; margin-bottom: 10px; }
+    .difficulty-btns { display: flex; gap: 8px; justify-content: center; }
+    .diff-btn {
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: 2px solid #30363d;
+      background: transparent;
+      color: #8b949e;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      line-height: 1.5;
+    }
+    .diff-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+    .diff-btn.selected { border-color: #58a6ff; background: #1c2d4a; color: #58a6ff; }
+
+    .start-btn {
+      padding: 14px 48px;
+      background: linear-gradient(135deg, #1f6feb, #388bfd);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 20px rgba(56,139,253,0.4);
+    }
+    .start-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(56,139,253,0.5); }
+    .start-btn:active { transform: translateY(0); }
+
+    /* ========== GAME SCREEN ========== */
+    #game-screen { width: 100%; }
+
+    .game-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .score-box { display: flex; flex-direction: column; }
+    .score-label { font-size: 11px; color: #8b949e; }
+    .score-value { font-size: 22px; font-weight: 700; color: #f0f6fc; }
+    .q-progress { font-size: 13px; color: #8b949e; }
+    .timer-box { display: flex; flex-direction: column; align-items: flex-end; }
+    .timer-label { font-size: 11px; color: #8b949e; }
+    .timer-value { font-size: 22px; font-weight: 700; color: #f0f6fc; transition: color 0.3s; }
+    .timer-value.warning { color: #f85149; }
+
+    .progress-track { width: 100%; height: 4px; background: #21262d; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #1f6feb, #58a6ff); border-radius: 4px; transition: width 0.4s ease; }
+
+    /* Target prefecture display */
+    .target-box {
+      width: 100%;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 14px;
+      padding: 14px 20px;
+      text-align: center;
+    }
+    .target-label { font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+    .target-name {
+      font-size: 32px;
+      font-weight: 700;
+      color: #58a6ff;
+      letter-spacing: 0.06em;
+      transition: opacity 0.2s;
+    }
+    .target-sub { font-size: 11px; color: #8b949e; margin-top: 4px; }
+
+    /* Streak badge */
+    .streak-badge {
+      font-size: 12px;
+      color: #e3b341;
+      background: #2a1f00;
+      border: 1px solid #9e6a0344;
+      border-radius: 6px;
+      padding: 3px 10px;
+      align-self: flex-end;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .streak-badge.show { opacity: 1; }
+
+    /* Japan map */
+    .map-wrap {
+      width: 100%;
+      background: #0a0f1a;
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      overflow: hidden;
+      position: relative;
+      user-select: none;
+    }
+
+    #japan-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .pref-path {
+      fill: #1a2f4a;
+      stroke: #3a6090;
+      stroke-width: 0.6;
+      vector-effect: non-scaling-stroke; /* ズームしても線幅一定 */
+      transition: fill 0.12s;
+      cursor: pointer;
+    }
+    .pref-path:hover { fill: #2a4d7a; }
+    .pref-path.answered { cursor: default; }
+    .pref-path.correct {
+      fill: #122a1a;
+      stroke: #3fb950;
+      stroke-width: 1.8;
+    }
+    .pref-path.wrong-click {
+      fill: #3a1010;
+      stroke: #f85149;
+      stroke-width: 1.8;
+      animation: flash-red 0.3s ease;
+    }
+    .pref-path.reveal-correct {
+      fill: #0d2119;
+      stroke: #3fb950;
+      stroke-width: 2;
+      animation: flash-green 0.4s ease;
+    }
+
+    @keyframes flash-red {
+      0% { fill: #7a1010; }
+      100% { fill: #3a1010; }
+    }
+    @keyframes flash-green {
+      0% { fill: #1a6a30; }
+      100% { fill: #0d2119; }
+    }
+
+    /* Zoom controls */
+    .zoom-controls {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 20;
+    }
+    .zoom-btn {
+      width: 34px; height: 34px;
+      background: #1c2d4aee;
+      border: 1px solid #3a6090;
+      color: #58a6ff;
+      border-radius: 7px;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+      user-select: none;
+      backdrop-filter: blur(4px);
+    }
+    .zoom-btn:hover { background: #2d5a8eee; }
+    .zoom-btn:active { transform: scale(0.92); }
+    .zoom-btn.reset { font-size: 14px; letter-spacing: -0.5px; }
+
+    /* drag cursor when panning */
+    #japan-svg.panning { cursor: grabbing !important; }
+
+    /* tooltip on map */
+    .map-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: #1c2d4a;
+      border: 1px solid #58a6ff55;
+      color: #e6edf3;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+      display: none;
+      z-index: 10;
+    }
+
+    /* answer feedback bar */
+    .feedback-bar {
+      font-size: 14px;
+      color: #8b949e;
+      text-align: center;
+      min-height: 22px;
+      width: 100%;
+    }
+    .feedback-bar .ok { color: #3fb950; font-weight: 700; }
+    .feedback-bar .ng { color: #f85149; font-weight: 700; }
+    .feedback-bar .pref-name { color: #3fb950; font-weight: 700; }
+
+    /* ========== RESULT SCREEN ========== */
+    #result-screen { text-align: center; gap: 18px; padding-top: 20px; }
+    .result-emoji { font-size: 56px; }
+    .result-title { font-size: 22px; font-weight: 700; color: #f0f6fc; }
+    .result-score-big { font-size: 64px; font-weight: 700; color: #58a6ff; line-height: 1; }
+    .result-score-label { font-size: 13px; color: #8b949e; margin-top: 4px; }
+
+    .result-stats { display: flex; gap: 24px; justify-content: center; }
+    .stat-item { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: #e6edf3; }
+    .stat-label { font-size: 12px; color: #8b949e; }
+
+    .result-rank {
+      font-size: 15px; color: #e3b341;
+      background: #2a1f00; border: 1px solid #9e6a0344;
+      padding: 8px 20px; border-radius: 8px;
+    }
+
+    .answer-log {
+      width: 100%; background: #161b22;
+      border: 1px solid #30363d; border-radius: 12px;
+      padding: 12px; max-height: 200px; overflow-y: auto;
+    }
+    .answer-log-title { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+    .log-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 0; border-bottom: 1px solid #21262d; font-size: 13px;
+    }
+    .log-item:last-child { border-bottom: none; }
+    .log-pref { color: #e6edf3; }
+    .log-correct { color: #3fb950; }
+    .log-wrong { color: #f85149; }
+
+    .result-buttons { display: flex; gap: 12px; justify-content: center; }
+    .retry-btn {
+      padding: 14px 36px;
+      background: linear-gradient(135deg, #1f6feb, #388bfd);
+      color: #fff; border: none; border-radius: 12px;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 20px rgba(56,139,253,0.4);
+    }
+    .retry-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(56,139,253,0.5); }
+    .home-btn {
+      padding: 10px 24px; background: transparent;
+      border: 2px solid #30363d; color: #8b949e;
+      border-radius: 10px; font-size: 13px; cursor: pointer; transition: all 0.15s;
+    }
+    .home-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+
+    .answer-log::-webkit-scrollbar { width: 4px; }
+    .answer-log::-webkit-scrollbar-track { background: #0d1117; }
+    .answer-log::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ======== LOADING ======== -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">地図データを読み込み中...</div>
+  </div>
+
+  <!-- ======== TITLE ======== -->
+  <div id="title-screen" class="screen">
+    <div class="title-logo">🗺️</div>
+    <div>
+      <div class="title-main">都道府県地図クイズ</div>
+      <div class="title-sub">名前を見て、地図から都道府県を探し出せ！</div>
+    </div>
+
+    <div style="width:100%">
+      <div class="difficulty-label">難易度を選択</div>
+      <div class="difficulty-btns">
+        <button class="diff-btn selected" data-diff="easy">かんたん<br><small style="font-size:11px">20秒 / 10問</small></button>
+        <button class="diff-btn" data-diff="normal">ふつう<br><small style="font-size:11px">12秒 / 10問</small></button>
+        <button class="diff-btn" data-diff="hard">むずかしい<br><small style="font-size:11px">8秒 / 全47問</small></button>
+      </div>
+    </div>
+
+    <button class="start-btn" id="start-btn">スタート</button>
+  </div>
+
+  <!-- ======== GAME ======== -->
+  <div id="game-screen" class="screen">
+
+    <div class="game-header">
+      <div class="score-box">
+        <span class="score-label">スコア</span>
+        <span class="score-value" id="score-value">0</span>
+      </div>
+      <div class="q-progress" id="q-progress">1 / 10</div>
+      <div class="timer-box">
+        <span class="timer-label">残り時間</span>
+        <span class="timer-value" id="timer-value">20</span>
+      </div>
+    </div>
+
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+
+    <!-- Target prefecture -->
+    <div class="target-box">
+      <div class="target-label">この都道府県はどこ？</div>
+      <div class="target-name" id="target-name">読み込み中…</div>
+      <div class="target-sub">↓ 地図をクリックして答えよう</div>
+    </div>
+
+    <div class="streak-badge" id="streak-badge">🔥 連続正解！</div>
+
+    <!-- Japan Map -->
+    <div class="map-wrap">
+      <div class="map-tooltip" id="map-tooltip"></div>
+      <!-- Zoom controls -->
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoom-in"    title="拡大">＋</button>
+        <button class="zoom-btn reset" id="zoom-reset" title="リセット">全体</button>
+        <button class="zoom-btn" id="zoom-out"   title="縮小">－</button>
+      </div>
+      <svg id="japan-svg" viewBox="0 0 480 540"></svg>
+    </div>
+
+    <div class="feedback-bar" id="feedback-bar">　</div>
+
+  </div>
+
+  <!-- ======== RESULT ======== -->
+  <div id="result-screen" class="screen">
+    <div class="result-emoji" id="result-emoji">🏆</div>
+    <div class="result-title" id="result-title">結果発表！</div>
+    <div class="result-score-big" id="result-score">0</div>
+    <div class="result-score-label">点</div>
+
+    <div class="result-stats">
+      <div class="stat-item">
+        <span class="stat-value" id="stat-correct">0</span>
+        <span class="stat-label">正解</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="stat-wrong">0</span>
+        <span class="stat-label">不正解</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="stat-accuracy">0%</span>
+        <span class="stat-label">正答率</span>
+      </div>
+    </div>
+
+    <div class="result-rank" id="result-rank">ランク: B</div>
+
+    <div class="answer-log">
+      <div class="answer-log-title">回答履歴</div>
+      <div id="answer-log-items"></div>
+    </div>
+
+    <div class="result-buttons">
+      <button class="home-btn" id="home-btn">タイトルへ</button>
+      <button class="retry-btn" id="retry-btn">もう一度</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// =====================================================
+//  CONFIG
+// =====================================================
+const TOPOJSON_URL = 'https://raw.githubusercontent.com/dataofjapan/land/master/japan.topojson';
+
+const DIFFICULTY = {
+  easy:   { questions: 10, timeLimit: 20 },
+  normal: { questions: 10, timeLimit: 12 },
+  hard:   { questions: 47, timeLimit: 8 },
+};
+
+// =====================================================
+//  STATE
+// =====================================================
+let allFeatures = [];
+let selectedDiff = 'easy';
+let config = DIFFICULTY.easy;
+
+let questionList = [];
+let currentIdx = 0;
+let score = 0;
+let streak = 0;
+let correctCount = 0;
+let wrongCount = 0;
+let answerLog = [];
+let timerInterval = null;
+let timeLeft = 20;
+let answered = false;
+let currentTarget = null; // feature
+
+// =====================================================
+//  UTILS
+// =====================================================
+function getPrefName(f) {
+  const p = f.properties;
+  return p.nam_ja || p.name_ja || p.NAME_JA || p.nam || p.name || '';
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// =====================================================
+//  AUDIO
+// =====================================================
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playBeep(freq, dur, type = 'sine', vol = 0.25) {
+  try {
+    const ctx = getAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start(); osc.stop(ctx.currentTime + dur);
+  } catch(e) {}
+}
+function playCorrect() {
+  playBeep(523, 0.1); setTimeout(() => playBeep(659, 0.1), 110); setTimeout(() => playBeep(784, 0.18), 220);
+}
+function playWrong() { playBeep(200, 0.25, 'sawtooth', 0.18); }
+function playTick() { playBeep(880, 0.04, 'square', 0.08); }
+
+// =====================================================
+//  MAP RENDERING (D3)
+// =====================================================
+const SVG_W = 480;
+const SVG_H = 540;
+
+let pathGen;
+let prefPaths;    // d3 selection of all prefecture paths
+let mapGroup;     // zoomable <g> group
+let zoomBehavior; // d3.zoom instance
+
+function buildMap(features) {
+  // Projection: main Japan のみを基準に fitExtent（沖縄除外でスケール確保）
+  const mainFeatures = features.filter(f => getPrefName(f) !== '沖縄県');
+  const mainGeo = { type: 'FeatureCollection', features: mainFeatures };
+
+  const projection = d3.geoMercator()
+    .fitExtent([[20, 16], [SVG_W - 20, SVG_H - 20]], mainGeo);
+  pathGen = d3.geoPath().projection(projection);
+
+  const svg = d3.select('#japan-svg');
+
+  // 海背景（ズーム対象外 = SVG直下）
+  svg.append('rect')
+    .attr('width', SVG_W).attr('height', SVG_H)
+    .attr('fill', '#060d1a');
+
+  // ズーム対象グループ
+  mapGroup = svg.append('g').attr('id', 'map-group');
+
+  // 都道府県パス
+  prefPaths = mapGroup.selectAll('.pref-path')
+    .data(features, d => getPrefName(d))
+    .enter()
+    .append('path')
+    .attr('class', 'pref-path')
+    .attr('d', pathGen)
+    .attr('data-name', d => getPrefName(d))
+    .on('mouseenter', onPrefHover)
+    .on('mouseleave', onPrefLeave)
+    .on('click', onPrefClick);
+
+  // ---- d3.zoom ----
+  zoomBehavior = d3.zoom()
+    .scaleExtent([1, 10])
+    .on('start', () => {
+      svg.classed('panning', true);
+      document.getElementById('map-tooltip').style.display = 'none';
+    })
+    .on('zoom', (event) => {
+      mapGroup.attr('transform', event.transform);
+    })
+    .on('end', () => {
+      svg.classed('panning', false);
+    });
+
+  // ダブルクリックズームは無効化（単クリック選択と競合するため）
+  svg.call(zoomBehavior).on('dblclick.zoom', null);
+
+  // ズームボタン
+  document.getElementById('zoom-in').addEventListener('click', () => {
+    svg.transition().duration(280).call(zoomBehavior.scaleBy, 1.6);
+  });
+  document.getElementById('zoom-out').addEventListener('click', () => {
+    svg.transition().duration(280).call(zoomBehavior.scaleBy, 1 / 1.6);
+  });
+  document.getElementById('zoom-reset').addEventListener('click', () => {
+    svg.transition().duration(380).call(zoomBehavior.transform, d3.zoomIdentity);
+  });
+}
+
+function onPrefHover(event, d) {
+  // 回答後のみ都道府県名ツールチップを表示
+  if (!answered) return;
+  const tooltip = document.getElementById('map-tooltip');
+  const wrapRect = document.querySelector('.map-wrap').getBoundingClientRect();
+  tooltip.textContent = getPrefName(d);
+  tooltip.style.display = 'block';
+  tooltip.style.left = (event.clientX - wrapRect.left + 8) + 'px';
+  tooltip.style.top  = (event.clientY - wrapRect.top  - 32) + 'px';
+}
+
+function onPrefLeave() {
+  document.getElementById('map-tooltip').style.display = 'none';
+}
+
+function onPrefClick(event, d) {
+  if (answered) return;
+  // ドラッグとクリックを区別（d3.zoom がドラッグ中は click を止めるため基本不要だが念のため）
+  const clickedName = getPrefName(d);
+  const targetName  = getPrefName(currentTarget);
+  selectAnswer(clickedName, targetName, d);
+}
+
+function resetAllPaths() {
+  prefPaths
+    .classed('correct', false)
+    .classed('wrong-click', false)
+    .classed('reveal-correct', false)
+    .classed('answered', false);
+}
+
+// =====================================================
+//  SCREEN
+// =====================================================
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// =====================================================
+//  GAME FLOW
+// =====================================================
+function startGame() {
+  config = DIFFICULTY[selectedDiff];
+  score = 0; streak = 0; correctCount = 0; wrongCount = 0;
+  answerLog = []; currentIdx = 0;
+
+  questionList = shuffle([...allFeatures]).slice(0, config.questions);
+
+  document.getElementById('score-value').textContent = '0';
+  resetAllPaths();
+  showScreen('game-screen');
+  loadQuestion();
+}
+
+function loadQuestion() {
+  answered = false;
+  clearInterval(timerInterval);
+  resetAllPaths();
+  document.getElementById('map-tooltip').style.display = 'none';
+
+  currentTarget = questionList[currentIdx];
+  const name = getPrefName(currentTarget);
+
+  // Header
+  document.getElementById('score-value').textContent = score;
+  document.getElementById('q-progress').textContent = `${currentIdx + 1} / ${config.questions}`;
+  document.getElementById('progress-fill').style.width = (currentIdx / config.questions * 100) + '%';
+
+  // Target display
+  const nameEl = document.getElementById('target-name');
+  nameEl.style.opacity = 0;
+  setTimeout(() => { nameEl.textContent = name; nameEl.style.opacity = 1; }, 100);
+
+  // Streak
+  const badge = document.getElementById('streak-badge');
+  if (streak >= 3) { badge.textContent = `🔥 ${streak}連続正解！`; badge.classList.add('show'); }
+  else badge.classList.remove('show');
+
+  // Feedback reset
+  document.getElementById('feedback-bar').innerHTML = '　';
+
+  // Timer
+  timeLeft = config.timeLimit;
+  updateTimer();
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateTimer();
+    if (timeLeft <= 4 && timeLeft > 0) playTick();
+    if (timeLeft <= 0) { clearInterval(timerInterval); timeExpired(name); }
+  }, 1000);
+}
+
+function updateTimer() {
+  const el = document.getElementById('timer-value');
+  el.textContent = timeLeft;
+  el.classList.toggle('warning', timeLeft <= 4);
+}
+
+function selectAnswer(clicked, correct, clickedFeature) {
+  if (answered) return;
+  answered = true;
+  clearInterval(timerInterval);
+
+  const isCorrect = clicked === correct;
+
+  // Disable hover cursor on all
+  prefPaths.classed('answered', true);
+
+  if (isCorrect) {
+    // 正解：クリックされた（=正解の）パスを緑に
+    prefPaths
+      .filter(d => getPrefName(d) === correct)
+      .classed('correct', true);
+
+    score += Math.max(10, timeLeft * 12);
+    streak++;
+    correctCount++;
+    playCorrect();
+    document.getElementById('score-value').textContent = score;
+    document.getElementById('feedback-bar').innerHTML =
+      `<span class="ok">✓ 正解！</span>`;
+  } else {
+    // 不正解：クリックしたパスを赤、正解パスを緑
+    prefPaths
+      .filter(d => getPrefName(d) === clicked)
+      .classed('wrong-click', true);
+    prefPaths
+      .filter(d => getPrefName(d) === correct)
+      .classed('reveal-correct', true);
+
+    streak = 0;
+    wrongCount++;
+    playWrong();
+    document.getElementById('feedback-bar').innerHTML =
+      `<span class="ng">✗ 不正解</span> — 正解: <span class="pref-name">${correct}</span>`;
+  }
+
+  answerLog.push({ name: correct, correct: isCorrect });
+
+  setTimeout(() => {
+    currentIdx++;
+    if (currentIdx >= config.questions) showResult();
+    else loadQuestion();
+  }, isCorrect ? 1300 : 2000);
+}
+
+function timeExpired(correct) {
+  if (answered) return;
+  answered = true;
+
+  prefPaths.classed('answered', true);
+  prefPaths
+    .filter(d => getPrefName(d) === correct)
+    .classed('reveal-correct', true);
+
+  streak = 0;
+  wrongCount++;
+  playWrong();
+  document.getElementById('feedback-bar').innerHTML =
+    `<span class="ng">⏱ 時間切れ！</span> — 正解: <span class="pref-name">${correct}</span>`;
+
+  answerLog.push({ name: correct, correct: false });
+
+  setTimeout(() => {
+    currentIdx++;
+    if (currentIdx >= config.questions) showResult();
+    else loadQuestion();
+  }, 2000);
+}
+
+// =====================================================
+//  RESULT
+// =====================================================
+function showResult() {
+  const total = config.questions;
+  const acc = Math.round(correctCount / total * 100);
+
+  document.getElementById('result-score').textContent = score;
+  document.getElementById('stat-correct').textContent = correctCount;
+  document.getElementById('stat-wrong').textContent = wrongCount;
+  document.getElementById('stat-accuracy').textContent = acc + '%';
+
+  let rank, emoji, title;
+  if (acc === 100)  { rank='S+'; emoji='🏆'; title='完璧！地理の天才！'; }
+  else if (acc>=90) { rank='S';  emoji='🥇'; title='素晴らしい！達人レベル！'; }
+  else if (acc>=70) { rank='A';  emoji='🥈'; title='よくできました！'; }
+  else if (acc>=50) { rank='B';  emoji='🥉'; title='まずまずの結果！'; }
+  else if (acc>=30) { rank='C';  emoji='📚'; title='もう少し練習しよう！'; }
+  else              { rank='D';  emoji='😅'; title='地図を眺めて復習しよう！'; }
+
+  document.getElementById('result-emoji').textContent = emoji;
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-rank').textContent = `ランク: ${rank}`;
+
+  document.getElementById('answer-log-items').innerHTML = answerLog.map(item =>
+    `<div class="log-item">
+      <span class="log-pref">${item.name}</span>
+      <span class="${item.correct ? 'log-correct' : 'log-wrong'}">${item.correct ? '✓ 正解' : '✗ 不正解'}</span>
+    </div>`
+  ).join('');
+
+  showScreen('result-screen');
+}
+
+// =====================================================
+//  INIT
+// =====================================================
+async function init() {
+  document.getElementById('loading').style.display = 'flex';
+  try {
+    const res = await fetch(TOPOJSON_URL);
+    if (!res.ok) throw new Error('fetch failed');
+    const topo = await res.json();
+
+    const key = Object.keys(topo.objects)[0];
+    const geo = topojson.feature(topo, topo.objects[key]);
+    allFeatures = geo.features.filter(f => getPrefName(f));
+
+    if (!allFeatures.length) throw new Error('no features');
+
+    buildMap(allFeatures);
+
+  } catch(e) {
+    document.getElementById('loading').innerHTML =
+      `<div style="color:#f85149;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+        <div>データの読み込みに失敗しました。<br>インターネット接続を確認してください。</div>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('loading').style.display = 'none';
+  showScreen('title-screen');
+}
+
+// =====================================================
+//  EVENT LISTENERS
+// =====================================================
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedDiff = btn.dataset.diff;
+  });
+});
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', startGame);
+document.getElementById('home-btn').addEventListener('click', () => showScreen('title-screen'));
+
+init();
+</script>
+</body>
+</html>
