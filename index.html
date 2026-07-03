@@ -246,9 +246,13 @@
       font-size: 14px;
       color: #8b949e;
       text-align: center;
-      min-height: 0;
+      min-height: 92px;
       width: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
     }
+    .feedback-bar.is-empty { visibility: hidden; }
     .feedback-bar .ok { color: #3fb950; font-weight: 700; }
     .feedback-bar .ng { color: #f85149; font-weight: 700; }
     .feedback-bar .pref-name { color: #3fb950; font-weight: 700; }
@@ -387,7 +391,7 @@
       <div class="target-sub">↓ 地図をクリックして答えよう</div>
     </div>
 
-    <div class="feedback-bar" id="feedback-bar">　</div>
+    <div class="feedback-bar is-empty" id="feedback-bar">　</div>
 
     <div class="streak-badge" id="streak-badge">🔥 連続正解！</div>
 
@@ -667,7 +671,7 @@ function loadQuestion() {
   else badge.classList.remove('show');
 
   // Feedback reset
-  document.getElementById('feedback-bar').innerHTML = '　';
+  setFeedback('　', true);
 
   // Timer
   timeLeft = config.timeLimit;
@@ -684,6 +688,12 @@ function updateTimer() {
   const el = document.getElementById('timer-value');
   el.textContent = timeLeft;
   el.classList.toggle('warning', timeLeft <= 4);
+}
+
+function setFeedback(html, isEmpty = false) {
+  const el = document.getElementById('feedback-bar');
+  el.innerHTML = html;
+  el.classList.toggle('is-empty', isEmpty);
 }
 
 function selectAnswer(clicked, correct, clickedFeature) {
@@ -708,12 +718,13 @@ function selectAnswer(clicked, correct, clickedFeature) {
     playCorrect();
     document.getElementById('score-value').textContent = score;
     const trivia = getRandomTrivia(correct);
-    document.getElementById('feedback-bar').innerHTML =
+    setFeedback(
       `<span class="ok">✓ 正解！</span>
        <div class="trivia-card">
          <div class="trivia-label">社会の豆知識</div>
          <div class="trivia-text">${trivia}</div>
-       </div>`;
+       </div>`
+    );
   } else {
     // 不正解：クリックしたパスを赤、正解パスを緑
     prefPaths
@@ -726,8 +737,7 @@ function selectAnswer(clicked, correct, clickedFeature) {
     streak = 0;
     wrongCount++;
     playWrong();
-    document.getElementById('feedback-bar').innerHTML =
-      `<span class="ng">✗ 不正解</span> — 正解: <span class="pref-name">${correct}</span>`;
+    setFeedback(`<span class="ng">✗ 不正解</span> — 正解: <span class="pref-name">${correct}</span>`);
   }
 
   answerLog.push({ name: correct, correct: isCorrect });
@@ -751,8 +761,7 @@ function timeExpired(correct) {
   streak = 0;
   wrongCount++;
   playWrong();
-  document.getElementById('feedback-bar').innerHTML =
-    `<span class="ng">⏱ 時間切れ！</span> — 正解: <span class="pref-name">${correct}</span>`;
+  setFeedback(`<span class="ng">⏱ 時間切れ！</span> — 正解: <span class="pref-name">${correct}</span>`);
 
   answerLog.push({ name: correct, correct: false });
 
