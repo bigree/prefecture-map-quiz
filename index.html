@@ -6,6 +6,7 @@
   <title>都道府県地図クイズ</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+  <script src="./trivia.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -251,6 +252,29 @@
     .feedback-bar .ok { color: #3fb950; font-weight: 700; }
     .feedback-bar .ng { color: #f85149; font-weight: 700; }
     .feedback-bar .pref-name { color: #3fb950; font-weight: 700; }
+    .trivia-card {
+      margin-top: 8px;
+      background: #161b22;
+      border: 1px solid #2f6f46;
+      border-radius: 10px;
+      padding: 10px 12px;
+      text-align: left;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.22);
+    }
+    .trivia-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #3fb950;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .trivia-text {
+      color: #e6edf3;
+      font-size: 13px;
+      line-height: 1.55;
+    }
 
     /* ========== RESULT SCREEN ========== */
     #result-screen { text-align: center; gap: 18px; padding-top: 20px; }
@@ -683,8 +707,13 @@ function selectAnswer(clicked, correct, clickedFeature) {
     correctCount++;
     playCorrect();
     document.getElementById('score-value').textContent = score;
+    const trivia = getRandomTrivia(correct);
     document.getElementById('feedback-bar').innerHTML =
-      `<span class="ok">✓ 正解！</span>`;
+      `<span class="ok">✓ 正解！</span>
+       <div class="trivia-card">
+         <div class="trivia-label">社会の豆知識</div>
+         <div class="trivia-text">${trivia}</div>
+       </div>`;
   } else {
     // 不正解：クリックしたパスを赤、正解パスを緑
     prefPaths
@@ -707,7 +736,7 @@ function selectAnswer(clicked, correct, clickedFeature) {
     currentIdx++;
     if (currentIdx >= config.questions) showResult();
     else loadQuestion();
-  }, isCorrect ? 1300 : 2000);
+  }, isCorrect ? 3200 : 2000);
 }
 
 function timeExpired(correct) {
