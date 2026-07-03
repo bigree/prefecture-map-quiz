@@ -246,18 +246,18 @@
       font-size: 14px;
       color: #8b949e;
       text-align: center;
-      min-height: 22px;
+      min-height: 0;
       width: 100%;
     }
     .feedback-bar .ok { color: #3fb950; font-weight: 700; }
     .feedback-bar .ng { color: #f85149; font-weight: 700; }
     .feedback-bar .pref-name { color: #3fb950; font-weight: 700; }
     .trivia-card {
-      margin-top: 8px;
+      margin-top: 6px;
       background: #161b22;
       border: 1px solid #2f6f46;
       border-radius: 10px;
-      padding: 10px 12px;
+      padding: 8px 11px;
       text-align: left;
       box-shadow: 0 8px 22px rgba(0,0,0,0.22);
     }
@@ -268,7 +268,7 @@
       color: #3fb950;
       font-size: 12px;
       font-weight: 700;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
     .trivia-text {
       color: #e6edf3;
@@ -387,6 +387,8 @@
       <div class="target-sub">↓ 地図をクリックして答えよう</div>
     </div>
 
+    <div class="feedback-bar" id="feedback-bar">　</div>
+
     <div class="streak-badge" id="streak-badge">🔥 連続正解！</div>
 
     <!-- Japan Map -->
@@ -400,8 +402,6 @@
       </div>
       <svg id="japan-svg" viewBox="0 0 480 540"></svg>
     </div>
-
-    <div class="feedback-bar" id="feedback-bar">　</div>
 
   </div>
 
