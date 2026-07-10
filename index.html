@@ -394,9 +394,9 @@
 
     <!-- Target prefecture -->
     <div class="target-box">
-      <div class="target-label">この都道府県はどこ？</div>
+      <div class="target-label" id="target-label">この都道府県はどこ？</div>
       <div class="target-name" id="target-name">読み込み中…</div>
-      <div class="target-sub">↓ 地図をクリックして答えよう</div>
+      <div class="target-sub" id="target-sub">↓ 地図をクリックして答えよう</div>
     </div>
 
     <div class="feedback-bar is-empty" id="feedback-bar">　</div>
@@ -480,6 +480,11 @@ let streak = 0;
 let correctCount = 0;
 let wrongCount = 0;
 let answerLog = [];
+let missedQuestions = [];
+let reviewQueue = [];
+let reviewTotal = 0;
+let isReviewMode = false;
+let reviewCompleted = false;
 let timerInterval = null;
 let timeLeft = 20;
 let answered = false;
@@ -1006,6 +1011,11 @@ function startGame() {
   config = DIFFICULTY[selectedDiff];
   score = 0; streak = 0; correctCount = 0; wrongCount = 0;
   answerLog = []; currentIdx = 0;
+  missedQuestions = [];
+  reviewQueue = [];
+  reviewTotal = 0;
+  isReviewMode = false;
+  reviewCompleted = false;
 
   questionList = shuffle([...allFeatures]).slice(0, config.questions);
 
@@ -1021,13 +1031,23 @@ function loadQuestion() {
   resetAllPaths();
   document.getElementById('map-tooltip').style.display = 'none';
 
-  currentTarget = questionList[currentIdx];
+  currentTarget = isReviewMode ? reviewQueue[0] : questionList[currentIdx];
   const name = getPrefName(currentTarget);
 
   // Header
   document.getElementById('score-value').textContent = score;
-  document.getElementById('q-progress').textContent = `${currentIdx + 1} / ${config.questions}`;
-  document.getElementById('progress-fill').style.width = (currentIdx / config.questions * 100) + '%';
+  if (isReviewMode) {
+    const solved = reviewTotal - reviewQueue.length;
+    document.getElementById('q-progress').textContent = `復習 残り ${reviewQueue.length}`;
+    document.getElementById('progress-fill').style.width = (solved / reviewTotal * 100) + '%';
+    document.getElementById('target-label').textContent = '復習モード：もう一度チャレンジ';
+    document.getElementById('target-sub').textContent = '↓ 正解するまで同じ県がまた出るよ';
+  } else {
+    document.getElementById('q-progress').textContent = `${currentIdx + 1} / ${config.questions}`;
+    document.getElementById('progress-fill').style.width = (currentIdx / config.questions * 100) + '%';
+    document.getElementById('target-label').textContent = 'この都道府県はどこ？';
+    document.getElementById('target-sub').textContent = '↓ 地図をクリックして答えよう';
+  }
 
   // Target display
   const nameEl = document.getElementById('target-name');
@@ -1065,6 +1085,51 @@ function setFeedback(html, isEmpty = false) {
   el.classList.toggle('is-empty', isEmpty);
 }
 
+function rememberMissedQuestion(feature) {
+  const name = getPrefName(feature);
+  if (!missedQuestions.some(item => getPrefName(item) === name)) {
+    missedQuestions.push(feature);
+  }
+}
+
+function startReviewMode() {
+  isReviewMode = true;
+  reviewQueue = [...missedQuestions];
+  reviewTotal = reviewQueue.length;
+  currentIdx = 0;
+  streak = 0;
+  loadQuestion();
+}
+
+function finishQuestion(isCorrect, delay) {
+  setTimeout(() => {
+    if (isReviewMode) {
+      if (isCorrect) {
+        reviewQueue.shift();
+      } else {
+        reviewQueue.push(reviewQueue.shift());
+      }
+
+      if (reviewQueue.length === 0) {
+        reviewCompleted = true;
+        document.getElementById('progress-fill').style.width = '100%';
+        showResult();
+      } else {
+        loadQuestion();
+      }
+      return;
+    }
+
+    currentIdx++;
+    if (currentIdx >= config.questions) {
+      if (missedQuestions.length) startReviewMode();
+      else showResult();
+    } else {
+      loadQuestion();
+    }
+  }, delay);
+}
+
 function selectAnswer(clicked, correct, clickedFeature) {
   if (answered) return;
   answered = true;
@@ -1081,14 +1146,16 @@ function selectAnswer(clicked, correct, clickedFeature) {
       .filter(d => getPrefName(d) === correct)
       .classed('correct', true);
 
-    score += Math.max(10, timeLeft * 12);
-    streak++;
-    correctCount++;
+    if (!isReviewMode) {
+      score += Math.max(10, timeLeft * 12);
+      streak++;
+      correctCount++;
+      document.getElementById('score-value').textContent = score;
+    }
     playCorrect();
-    document.getElementById('score-value').textContent = score;
     const trivia = getRandomTrivia(correct);
     setFeedback(
-      `<span class="ok">✓ 正解！</span>
+      `<span class="ok">✓ ${isReviewMode ? '復習クリア！' : '正解！'}</span>
        <div class="trivia-card">
          <div class="trivia-label">社会の豆知識</div>
          <div class="trivia-text">${formatTrivia(trivia)}</div>
@@ -1104,18 +1171,19 @@ function selectAnswer(clicked, correct, clickedFeature) {
       .classed('reveal-correct', true);
 
     streak = 0;
-    wrongCount++;
+    if (!isReviewMode) {
+      wrongCount++;
+      rememberMissedQuestion(currentTarget);
+    }
     playWrong();
-    setFeedback(`<span class="ng">✗ 不正解</span> — 正解: <span class="pref-name">${correct}</span>`);
+    setFeedback(`<span class="ng">✗ ${isReviewMode ? 'もう一度！' : '不正解'}</span> — 正解: <span class="pref-name">${correct}</span>`);
   }
 
-  answerLog.push({ name: correct, correct: isCorrect });
+  if (!isReviewMode) {
+    answerLog.push({ name: correct, correct: isCorrect });
+  }
 
-  setTimeout(() => {
-    currentIdx++;
-    if (currentIdx >= config.questions) showResult();
-    else loadQuestion();
-  }, isCorrect ? 3200 : 2000);
+  finishQuestion(isCorrect, isCorrect ? 3200 : 2000);
 }
 
 function timeExpired(correct) {
@@ -1128,17 +1196,18 @@ function timeExpired(correct) {
     .classed('reveal-correct', true);
 
   streak = 0;
-  wrongCount++;
+  if (!isReviewMode) {
+    wrongCount++;
+    rememberMissedQuestion(currentTarget);
+  }
   playWrong();
-  setFeedback(`<span class="ng">⏱ 時間切れ！</span> — 正解: <span class="pref-name">${correct}</span>`);
+  setFeedback(`<span class="ng">⏱ ${isReviewMode ? 'もう一度！' : '時間切れ！'}</span> — 正解: <span class="pref-name">${correct}</span>`);
 
-  answerLog.push({ name: correct, correct: false });
+  if (!isReviewMode) {
+    answerLog.push({ name: correct, correct: false });
+  }
 
-  setTimeout(() => {
-    currentIdx++;
-    if (currentIdx >= config.questions) showResult();
-    else loadQuestion();
-  }, 2000);
+  finishQuestion(false, 2000);
 }
 
 // =====================================================
@@ -1161,9 +1230,13 @@ function showResult() {
   else if (acc>=30) { rank='C';  emoji='📚'; title='もう少し練習しよう！'; }
   else              { rank='D';  emoji='😅'; title='地図を眺めて復習しよう！'; }
 
-  document.getElementById('result-emoji').textContent = emoji;
-  document.getElementById('result-title').textContent = title;
-  document.getElementById('result-rank').textContent = `ランク: ${rank}`;
+  const reviewNote = missedQuestions.length
+    ? ` / 復習 ${missedQuestions.length}問クリア`
+    : '';
+
+  document.getElementById('result-emoji').textContent = reviewCompleted ? '🎓' : emoji;
+  document.getElementById('result-title').textContent = reviewCompleted ? '復習まで完了！' : title;
+  document.getElementById('result-rank').textContent = `ランク: ${rank}${reviewNote}`;
 
   document.getElementById('answer-log-items').innerHTML = answerLog.map(item =>
     `<div class="log-item">
